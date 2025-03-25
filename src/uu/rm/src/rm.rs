@@ -37,6 +37,13 @@ pub enum InteractiveMode {
     PromptProtected,
 }
 
+#[derive(PartialEq)]
+pub enum PreserveRoot {
+    Default,
+    YesAll,
+    No,
+}
+
 /// Options for the `rm` command
 ///
 /// All options are public so that the options can be programmatically
@@ -63,7 +70,7 @@ pub struct Options {
     /// `--one-file-system`
     pub one_fs: bool,
     /// `--preserve-root`/`--no-preserve-root`
-    pub preserve_root: bool,
+    pub preserve_root: PreserveRoot,
     /// `-r`, `--recursive`
     pub recursive: bool,
     /// `-d`, `--dir`
@@ -82,7 +89,7 @@ impl Default for Options {
             force: false,
             interactive: InteractiveMode::PromptProtected,
             one_fs: false,
-            preserve_root: true,
+            preserve_root: PreserveRoot::Default,
             recursive: false,
             dir: false,
             verbose: false,
@@ -162,7 +169,18 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
                 }
             },
             one_fs: matches.get_flag(OPT_ONE_FILE_SYSTEM),
-            preserve_root: !matches.get_flag(OPT_NO_PRESERVE_ROOT),
+            preserve_root: if matches.get_flag(OPT_NO_PRESERVE_ROOT) {
+                PreserveRoot::No
+            } else {
+                match matches
+                    .get_one::<String>(OPT_PRESERVE_ROOT)
+                    .unwrap()
+                    .as_str()
+                {
+                    "all" => PreserveRoot::YesAll,
+                    _ => PreserveRoot::Default,
+                }
+            },
             recursive: matches.get_flag(OPT_RECURSIVE),
             dir: matches.get_flag(OPT_DIR),
             verbose: matches.get_flag(OPT_VERBOSE),
@@ -246,8 +264,7 @@ pub fn uu_app() -> Command {
                 .long(OPT_ONE_FILE_SYSTEM)
                 .help(
                     "when removing a hierarchy recursively, skip any directory that is on a file \
-                    system different from that of the corresponding command line argument (NOT \
-                    IMPLEMENTED)",
+                    system different from that of the corresponding command line argument",
                 ).action(ArgAction::SetTrue),
         )
         .arg(
@@ -260,7 +277,10 @@ pub fn uu_app() -> Command {
             Arg::new(OPT_PRESERVE_ROOT)
                 .long(OPT_PRESERVE_ROOT)
                 .help("do not remove '/' (default)")
-                .action(ArgAction::SetTrue),
+                .value_parser(["all"])
+                .default_value("all")
+                .default_missing_value("all")
+                .hide_default_value(true)
         )
         .arg(
             Arg::new(OPT_RECURSIVE)
@@ -308,7 +328,6 @@ pub fn uu_app() -> Command {
         )
 }
 
-// TODO: implement one-file-system (this may get partially implemented in walkdir)
 /// Remove (or unlink) the given files
 ///
 /// Returns true if it has encountered an error.
@@ -559,11 +578,12 @@ fn validate_single_filesystem(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if a path is on the same file system when `--one-file-system` option is enabled.
+/// Check if a path is on the same file system when `--one-file-system` or `--preserve-root=all` options are enabled.
 /// Return `true` if the path can be processed, `false` if it should be skipped.
 fn check_one_fs(path: &Path, options: &Options) -> bool {
-    // If `--one-file-system` is not active, always proceed
-    if !options.one_fs {
+    // If neigher `--one-file-system` nor `--preserve-root=all` is active,
+    // always proceed
+    if !options.one_fs && options.preserve_root != PreserveRoot::YesAll {
         return true;
     }
 
@@ -577,6 +597,9 @@ fn check_one_fs(path: &Path, options: &Options) -> bool {
                 "skipping {}, since it's on a different device",
                 path.quote()
             );
+            if options.preserve_root == PreserveRoot::YesAll {
+                show_error!("and --preserve-root=all is in effect");
+            }
             false
         }
     }
@@ -599,9 +622,9 @@ fn handle_dir(path: &Path, options: &Options) -> bool {
     }
 
     let is_root = path.has_root() && path.parent().is_none();
-    if options.recursive && (!is_root || !options.preserve_root) {
+    if options.recursive && (!is_root || options.preserve_root == PreserveRoot::No) {
         had_err = remove_dir_recursive(path, options);
-    } else if options.dir && (!is_root || !options.preserve_root) {
+    } else if options.dir && (!is_root || options.preserve_root == PreserveRoot::No) {
         had_err = remove_dir(path, options).bitor(had_err);
     } else if options.recursive {
         show_error!("it is dangerous to operate recursively on '{MAIN_SEPARATOR}'");
