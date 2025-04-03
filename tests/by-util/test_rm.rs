@@ -1026,8 +1026,8 @@ fn test_rm_one_file_system() {
     // Define paths for temporary files and directories
     let img_path = "fs.img";
     let mount_point = "fs";
-    let src_dir = "a/b";
-    let bind_mount_point = "a";
+    let remove_dir = "a";
+    let bind_mount_point = "a/b";
 
     at.touch(img_path);
 
@@ -1046,8 +1046,8 @@ fn test_rm_one_file_system() {
     scene.cmd("/sbin/mkfs.ext4").arg(img_path).succeeds();
 
     // Prepare directory structure
-    at.mkdir_all(src_dir);
     at.mkdir_all(mount_point);
+    at.mkdir_all(bind_mount_point);
 
     // Mount as loop device
     scene
@@ -1067,7 +1067,7 @@ fn test_rm_one_file_system() {
     // Run the test
     scene
         .ucmd()
-        .args(&["--one-file-system", "-rf", bind_mount_point])
+        .args(&["--one-file-system", "-rf", remove_dir])
         .fails()
         .stderr_contains(format!("rm: skipping '{}'", bind_mount_point));
 
@@ -1095,8 +1095,7 @@ fn test_rm_preserve_root() {
     // Define paths for temporary files and directories
     let img_path = "fs.img";
     let mount_point = "fs";
-    let src_dir = "a/b";
-    let bind_mount_point = "a";
+    let bind_mount_point = "a/b";
 
     at.touch(img_path);
 
@@ -1115,8 +1114,8 @@ fn test_rm_preserve_root() {
     scene.cmd("/sbin/mkfs.ext4").arg(img_path).succeeds();
 
     // Prepare directory structure
-    at.mkdir_all(src_dir);
     at.mkdir_all(mount_point);
+    at.mkdir_all(bind_mount_point);
 
     // Mount as loop device
     scene
